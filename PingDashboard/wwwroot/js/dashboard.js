@@ -12,6 +12,9 @@
     var sortCol = null;
     var sortDir = "asc";
 
+    // ── Filter state ───────────────────────────────────────────────────────────
+    var napboxFilter = "";   // "" = show all
+
     // ─────────────────────────────────────────────────────────────────────────
     // NORMALISE RAZOR-RENDERED ROWS
     // Razor emits plain text directly inside <td class="client-name">.
@@ -107,12 +110,20 @@
         return '<span class="badge bg-secondary px-2 py-1">Unknown</span>';
     }
 
-    function actionButtons(id, name, ip) {
-        var n = escHtml(name), p = escHtml(ip);
+    function actionButtons(id, name, ip, email, notify, napbox) {
+        var n = escHtml(name), p = escHtml(ip), e = escHtml(email || ""),
+            nt = notify ? "1" : "0", nb = escHtml(napbox || "");
         return '<button class="btn btn-xs btn-outline-primary me-1 btn-edit"' +
-               ' data-id="' + id + '" data-name="' + n + '" data-ip="' + p + '" title="Edit">✏</button>' +
+               ' data-id="' + id + '" data-name="' + n + '" data-ip="' + p + '"' +
+               ' data-email="' + e + '" data-notify="' + nt + '" data-napbox="' + nb + '" title="Edit">✏</button>' +
                '<button class="btn btn-xs btn-outline-danger btn-delete"' +
                ' data-id="' + id + '" data-name="' + n + '" title="Delete">✕</button>';
+    }
+
+    function bellIcon(enabled, email) {
+        if (enabled)
+            return '<span class="bell-on" title="Notifications ON: ' + escHtml(email || "") + '">🔔</span>';
+        return '<span class="bell-off" title="Notifications OFF">🔕</span>';
     }
 
     function escHtml(s) {
@@ -145,6 +156,11 @@
             return st.classList.contains("bg-success") ? "a" :
                    st.classList.contains("bg-danger")  ? "b" : "c";
         }
+        if (col === "napbox") {
+            var nb = (row.getAttribute("data-napbox") || "").trim().toLowerCase();
+            // Empty napbox sorts to the bottom
+            return nb === "" ? "~" : nb;
+        }
         return "";
     }
 
@@ -164,10 +180,49 @@
             var n = row.querySelector(".row-num");
             if (n) n.textContent = idx + 1;
         });
+        applyNapboxFilter();
+    }
+
+    // Show/hide rows based on the selected napbox filter, then renumber visible rows.
+    function applyNapboxFilter() {
+        var rows = document.querySelectorAll("#statusBody tr[id]");
+        var visible = 0;
+        rows.forEach(function(row) {
+            var nb = (row.getAttribute("data-napbox") || "").trim();
+            var show = (napboxFilter === "") || (nb === napboxFilter);
+            row.style.display = show ? "" : "none";
+            if (show) {
+                visible++;
+                var n = row.querySelector(".row-num");
+                if (n) n.textContent = visible;
+            }
+        });
+        // Update the client count to reflect the filtered view
+        var countEl = document.getElementById("clientCount");
+        if (countEl) {
+            countEl.textContent = napboxFilter === ""
+                ? rows.length
+                : visible + " of " + rows.length;
+        }
+        // Show a "no match" note row if the filter hides everything
+        var tbody = document.getElementById("statusBody");
+        var noMatch = document.getElementById("noMatchRow");
+        if (napboxFilter !== "" && visible === 0 && rows.length > 0) {
+            if (!noMatch) {
+                noMatch = document.createElement("tr");
+                noMatch.id = "noMatchRow";
+                noMatch.innerHTML =
+                    '<td colspan="8" class="text-center text-muted py-4">' +
+                    'No clients in this napbox.</td>';
+                tbody.appendChild(noMatch);
+            }
+        } else if (noMatch) {
+            noMatch.remove();
+        }
     }
 
     function updateSortIcons() {
-        ["name","status"].forEach(function(col) {
+        ["name","status","napbox"].forEach(function(col) {
             var icon = document.getElementById("sort-icon-" + col);
             var th   = document.getElementById("th-" + col);
             if (!icon || !th) return;
@@ -216,6 +271,8 @@
                 '</td>' +
                 '<td class="d-none d-md-table-cell"><code class="client-ip"></code></td>' +
                 '<td class="client-status"></td>' +
+                '<td class="client-napbox text-muted small"></td>' +
+                '<td class="text-center client-notify"></td>' +
                 '<td class="d-none d-lg-table-cell text-muted small client-time"></td>' +
                 '<td class="text-center client-actions"></td>';
             tbody.appendChild(row);
@@ -231,12 +288,18 @@
         var codeEl = row.querySelector(".client-ip");
         if (codeEl) codeEl.textContent = data.ipAddress;
         row.querySelector(".client-status").innerHTML = statusBadge(data.isConnected);
+        row.setAttribute("data-napbox", data.napboxName || "");
+        var napboxEl = row.querySelector(".client-napbox");
+        if (napboxEl) napboxEl.textContent = data.napboxName || "—";
+        var notifyEl = row.querySelector(".client-notify");
+        if (notifyEl) notifyEl.innerHTML = bellIcon(data.isNotificationEnabled, data.notifyEmail);
         var timeEl = row.querySelector(".client-time");
         if (timeEl) timeEl.textContent = timeStr;
         var actEl = row.querySelector(".client-actions");
-        if (actEl) actEl.innerHTML = actionButtons(data.id, data.name, data.ipAddress);
+        if (actEl) actEl.innerHTML = actionButtons(data.id, data.name, data.ipAddress, data.notifyEmail, data.isNotificationEnabled, data.napboxName);
 
         applySortAndRenumber();
+        applyNapboxFilter();   // ensure new/updated rows respect the active filter
         row.classList.remove("row-flash"); void row.offsetWidth; row.classList.add("row-flash");
         touchRefresh();
     }
@@ -315,27 +378,52 @@
     // MODAL
     // ─────────────────────────────────────────────────────────────────────────
     function clearModalErrors() {
-        ["inputName","inputIp"].forEach(function(id) {
-            document.getElementById(id).classList.remove("is-invalid");
+        ["inputName","inputIp","inputNotifyEmail"].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.classList.remove("is-invalid");
         });
-        document.getElementById("nameError").textContent = "";
-        document.getElementById("ipError").textContent   = "";
+        document.getElementById("nameError").textContent  = "";
+        document.getElementById("ipError").textContent    = "";
+        var em = document.getElementById("emailError");
+        if (em) em.textContent = "";
+    }
+
+    // Set the napbox <select> value; if the stored value isn't an option
+    // (e.g. the napbox was deleted), add it as a temporary option so it shows.
+    function setNapboxSelect(value) {
+        var sel = document.getElementById("inputNapbox");
+        if (!sel) return;
+        value = value || "";
+        var found = Array.prototype.some.call(sel.options, function (o) { return o.value === value; });
+        if (value && !found) {
+            var opt = document.createElement("option");
+            opt.value = value;
+            opt.textContent = value + " (not in list)";
+            sel.appendChild(opt);
+        }
+        sel.value = value;
     }
 
     function openAddModal(prefillName, prefillIp) {
         document.getElementById("clientModalLabel").textContent = "Add Client";
-        document.getElementById("editId").value    = "0";
-        document.getElementById("inputName").value = prefillName || "";
-        document.getElementById("inputIp").value   = prefillIp   || "";
+        document.getElementById("editId").value              = "0";
+        document.getElementById("inputName").value           = prefillName || "";
+        document.getElementById("inputIp").value             = prefillIp   || "";
+        document.getElementById("inputNotifyEmail").value    = "";
+        document.getElementById("inputNotifyEnabled").checked = false;
+        setNapboxSelect("");
         clearModalErrors();
         bsModal.show();
     }
 
-    function openEditModal(id, name, ip) {
+    function openEditModal(id, name, ip, email, notify, napbox) {
         document.getElementById("clientModalLabel").textContent = "Edit Client";
-        document.getElementById("editId").value    = id;
-        document.getElementById("inputName").value = name;
-        document.getElementById("inputIp").value   = ip;
+        document.getElementById("editId").value              = id;
+        document.getElementById("inputName").value           = name;
+        document.getElementById("inputIp").value             = ip;
+        document.getElementById("inputNotifyEmail").value    = email || "";
+        document.getElementById("inputNotifyEnabled").checked = (notify === "1" || notify === true);
+        setNapboxSelect(napbox);
         clearModalErrors();
         bsModal.show();
     }
@@ -343,15 +431,54 @@
     window.openAddModal  = openAddModal;
     window.openEditModal = openEditModal;
 
+    // Load napbox options from the API into the modal dropdown
+    function loadNapboxes() {
+        fetch("/api/napboxes")
+            .then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (boxes) {
+                // 1) Modal dropdown
+                var sel = document.getElementById("inputNapbox");
+                if (sel) {
+                    sel.innerHTML = '<option value="">— None —</option>';
+                    boxes.forEach(function (b) {
+                        var opt = document.createElement("option");
+                        opt.value = b.napboxName;
+                        opt.textContent = b.napboxName;
+                        sel.appendChild(opt);
+                    });
+                }
+                // 2) Header filter dropdown (preserve current selection)
+                var filter = document.getElementById("filterNapbox");
+                if (filter) {
+                    var current = filter.value;
+                    filter.innerHTML = '<option value="">All napboxes</option>';
+                    boxes.forEach(function (b) {
+                        var opt = document.createElement("option");
+                        opt.value = b.napboxName;
+                        opt.textContent = b.napboxName;
+                        filter.appendChild(opt);
+                    });
+                    // restore selection if it still exists
+                    filter.value = current;
+                    if (filter.value !== current) { napboxFilter = ""; filter.value = ""; }
+                }
+            })
+            .catch(function () { /* dropdowns just stay with defaults */ });
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // CRUD
     // ─────────────────────────────────────────────────────────────────────────
     function saveClient() {
         clearModalErrors();
-        var id   = parseInt(document.getElementById("editId").value, 10);
-        var name = document.getElementById("inputName").value.trim();
-        var ip   = document.getElementById("inputIp").value.trim();
+        var id       = parseInt(document.getElementById("editId").value, 10);
+        var name     = document.getElementById("inputName").value.trim();
+        var ip       = document.getElementById("inputIp").value.trim();
+        var email    = document.getElementById("inputNotifyEmail").value.trim();
+        var notifyOn = document.getElementById("inputNotifyEnabled").checked;
+        var napbox   = document.getElementById("inputNapbox").value;
         var valid = true;
+
         if (!name) {
             document.getElementById("inputName").classList.add("is-invalid");
             document.getElementById("nameError").textContent = "Name is required.";
@@ -362,6 +489,25 @@
             document.getElementById("ipError").textContent = "IP / Hostname is required.";
             valid = false;
         }
+        // Validate each comma-separated email if any provided
+        if (email) {
+            var parts = email.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+            var re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            var bad = parts.filter(function(p){ return !re.test(p); });
+            if (bad.length) {
+                document.getElementById("inputNotifyEmail").classList.add("is-invalid");
+                document.getElementById("emailError").textContent = "Invalid email: " + bad.join(", ");
+                valid = false;
+            } else {
+                email = parts.join(", "); // normalise spacing
+            }
+        }
+        // If notifications enabled, require at least one email
+        if (notifyOn && !email) {
+            document.getElementById("inputNotifyEmail").classList.add("is-invalid");
+            document.getElementById("emailError").textContent = "Add at least one email to enable notifications.";
+            valid = false;
+        }
         if (!valid) return;
 
         var url    = id === 0 ? "/api/clients" : "/api/clients/" + id;
@@ -370,7 +516,13 @@
         fetch(url, {
             method:  method,
             headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ name: name, ipAddress: ip })
+            body:    JSON.stringify({
+                name: name,
+                ipAddress: ip,
+                notifyEmail: email,
+                isNotificationEnabled: notifyOn,
+                napboxName: napbox
+            })
         })
         .then(function(r) {
             if (r.ok) return r.json().then(function(client) {
@@ -383,7 +535,10 @@
                     isConnected:     client.isConnected,
                     lastReceivedTime: client.lastReceivedTime
                         ? client.lastReceivedTime.replace("T"," ").substring(0,19) + " UTC"
-                        : null
+                        : null,
+                    notifyEmail:           client.notifyEmail,
+                    isNotificationEnabled: client.isNotificationEnabled,
+                    napboxName:            client.napboxName
                 });
                 removeFromUnknown(client.ipAddress);
             });
@@ -410,7 +565,7 @@
                 showToast('"' + name + '" deleted.', "success");
                 if (!document.querySelector("#statusBody tr[id]"))
                     document.getElementById("statusBody").innerHTML =
-                        '<tr id="noDataRow"><td colspan="6" class="text-center text-muted py-4">' +
+                        '<tr id="noDataRow"><td colspan="8" class="text-center text-muted py-4">' +
                         'No clients — click <strong>Add</strong> to get started.</td></tr>';
             } else {
                 showToast("Delete failed.", "danger");
@@ -439,12 +594,13 @@
     // INITIALISE — normalise server-rendered rows then wire events
     // ─────────────────────────────────────────────────────────────────────────
     normaliseExistingRows();
+    loadNapboxes();
 
     document.getElementById("statusBody").addEventListener("click", function(e) {
         var btn = e.target.closest("button");
         if (!btn) return;
         if (btn.classList.contains("btn-edit"))
-            openEditModal(btn.dataset.id, btn.dataset.name, btn.dataset.ip);
+            openEditModal(btn.dataset.id, btn.dataset.name, btn.dataset.ip, btn.dataset.email, btn.dataset.notify, btn.dataset.napbox);
         else if (btn.classList.contains("btn-delete"))
             deleteClient(btn.dataset.id, btn.dataset.name);
     });
@@ -457,10 +613,19 @@
     document.getElementById("btnAddClient").addEventListener("click", function() { openAddModal(); });
     document.getElementById("btnSave").addEventListener("click", saveClient);
 
-    ["name","status"].forEach(function(col) {
+    ["name","status","napbox"].forEach(function(col) {
         var th = document.getElementById("th-" + col);
         if (th) th.addEventListener("click", function() { onSortClick(col); });
     });
+
+    // Napbox filter dropdown
+    var filterEl = document.getElementById("filterNapbox");
+    if (filterEl) {
+        filterEl.addEventListener("change", function() {
+            napboxFilter = this.value;
+            applyNapboxFilter();
+        });
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SIGNALR

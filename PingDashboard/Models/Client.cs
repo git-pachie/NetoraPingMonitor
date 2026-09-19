@@ -17,4 +17,15 @@ public class Client
     public bool? IsConnected { get; set; }
 
     public DateTime? LastReceivedTime { get; set; }
+
+    /// <summary>Comma-separated list of e-mail addresses to notify.</summary>
+    [MaxLength(1000)]
+    public string? NotifyEmail { get; set; }
+
+    /// <summary>Whether notifications are enabled for this client.</summary>
+    public bool IsNotificationEnabled { get; set; }
+
+    /// <summary>Name of the NAP box this client belongs to (optional).</summary>
+    [MaxLength(200)]
+    public string? NapboxName { get; set; }
 }

@@ -88,3 +88,11 @@ code { color: #0d6efd; font-size: .85rem; }
     .modal-footer { flex-wrap: wrap; gap: .5rem; }
     .modal-footer .btn { flex: 1 1 auto; }
 }
+
+/* ── Notification bell ───────────────────────────────────────────────────────── */
+.client-notify { font-size: 1.05rem; cursor: default; }
+.bell-on  { filter: none; }
+.bell-off { opacity: .45; filter: grayscale(1); }
+
+/* Notification switch spacing in modal */
+.form-switch .form-check-input { cursor: pointer; }

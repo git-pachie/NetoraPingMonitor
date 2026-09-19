@@ -42,8 +42,11 @@ public class ClientsController : ControllerBase
 
         var client = new Client
         {
-            Name      = dto.Name.Trim(),
-            IpAddress = dto.IpAddress.Trim()
+            Name                  = dto.Name.Trim(),
+            IpAddress             = dto.IpAddress.Trim(),
+            NotifyEmail           = string.IsNullOrWhiteSpace(dto.NotifyEmail) ? null : dto.NotifyEmail.Trim(),
+            IsNotificationEnabled = dto.IsNotificationEnabled,
+            NapboxName            = string.IsNullOrWhiteSpace(dto.NapboxName) ? null : dto.NapboxName.Trim()
         };
         _db.Clients.Add(client);
         await _db.SaveChangesAsync();
@@ -64,8 +67,11 @@ public class ClientsController : ControllerBase
         if (duplicate)
             return Conflict(new { message = $"IP address '{dto.IpAddress}' already exists." });
 
-        client.Name      = dto.Name.Trim();
-        client.IpAddress = dto.IpAddress.Trim();
+        client.Name                  = dto.Name.Trim();
+        client.IpAddress             = dto.IpAddress.Trim();
+        client.NotifyEmail           = string.IsNullOrWhiteSpace(dto.NotifyEmail) ? null : dto.NotifyEmail.Trim();
+        client.IsNotificationEnabled = dto.IsNotificationEnabled;
+        client.NapboxName            = string.IsNullOrWhiteSpace(dto.NapboxName) ? null : dto.NapboxName.Trim();
         await _db.SaveChangesAsync();
         return Ok(client);
     }
@@ -93,4 +99,12 @@ public class ClientDto
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.MaxLength(100)]
     public string IpAddress { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.MaxLength(1000)]
+    public string? NotifyEmail { get; set; }
+
+    public bool IsNotificationEnabled { get; set; }
+
+    [System.ComponentModel.DataAnnotations.MaxLength(200)]
+    public string? NapboxName { get; set; }
 }

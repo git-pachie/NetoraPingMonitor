@@ -1,0 +1,87 @@
+@model IReadOnlyList<PingDashboard.Models.StatusLog>
+@{
+    ViewData["Title"] = "Status Logs";
+}
+
+@* ── Toast ──────────────────────────────────────────────────────────────────── *@
+<div aria-live="polite" aria-atomic="true"
+     style="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;min-width:280px;max-width:90vw;">
+    <div id="toastBox" class="toast align-items-center border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body fw-semibold" id="toastMsg"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+@* ── Header ──────────────────────────────────────────────────────────────────── *@
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h4 class="mb-0 fw-bold">Status Logs</h4>
+        <small class="text-muted">Connect / disconnect events (logged only on status change)</small>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span id="liveBadge" class="badge bg-secondary px-2 py-2">
+            <span class="dot dot-secondary"></span> Live
+        </span>
+        <button class="btn btn-sm btn-outline-danger" id="btnClearLogs">Clear Logs</button>
+    </div>
+</div>
+
+@* ── Log table ────────────────────────────────────────────────────────────────── *@
+<div class="card shadow-sm mb-4">
+    <div class="table-responsive">
+        <table class="table table-hover table-striped align-middle mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width:60px">#</th>
+                    <th>Client</th>
+                    <th class="d-none d-md-table-cell">IP Address</th>
+                    <th>Event</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody id="logBody">
+                @if (!Model.Any())
+                {
+                    <tr id="noDataRow">
+                        <td colspan="5" class="text-center text-muted py-4">
+                            No log entries yet.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    int i = 1;
+                    foreach (var l in Model)
+                    {
+                        <tr>
+                            <td>@(i++)</td>
+                            <td>@l.ClientName</td>
+                            <td class="d-none d-md-table-cell"><code>@l.IpAddress</code></td>
+                            <td>
+                                @if (l.IsConnected)
+                                {
+                                    <span class="badge bg-success px-2 py-1">Connected</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger px-2 py-1">Disconnected</span>
+                                }
+                            </td>
+                            <td class="text-muted small log-time"
+                                data-utc="@l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss") UTC">
+                                @l.Timestamp.ToString("yyyy-MM-dd HH:mm:ss") UTC
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/signalr.min.js"></script>
+    <script src="~/js/logs.js" asp-append-version="true"></script>
+}

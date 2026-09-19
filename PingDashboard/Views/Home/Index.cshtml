@@ -21,6 +21,12 @@
         <small class="text-muted">Live status · <span id="clientCount">@Model.Count</span> client(s)</small>
     </div>
     <div class="d-flex flex-wrap align-items-center gap-2">
+        <div class="d-flex align-items-center gap-1">
+            <label for="filterNapbox" class="text-muted small mb-0 d-none d-sm-inline">Napbox:</label>
+            <select id="filterNapbox" class="form-select form-select-sm" style="min-width:150px">
+                <option value="">All napboxes</option>
+            </select>
+        </div>
         <span id="connectionBadge" class="badge bg-secondary px-2 py-2 d-flex align-items-center gap-1">
             <span id="connectionDot" class="dot dot-secondary"></span>
             <span id="connectionText">Connecting…</span>
@@ -42,6 +48,8 @@
                     <th id="th-name"   class="sortable">Name <span id="sort-icon-name"   class="sort-icon">⇅</span></th>
                     <th class="d-none d-md-table-cell">IP Address</th>
                     <th id="th-status" class="sortable">Status <span id="sort-icon-status" class="sort-icon">⇅</span></th>
+                    <th id="th-napbox" class="sortable">Napbox <span id="sort-icon-napbox" class="sort-icon">⇅</span></th>
+                    <th class="text-center" style="width:50px">Notify</th>
                     <th class="d-none d-lg-table-cell">Last Received Time</th>
                     <th class="text-center" style="width:90px">Actions</th>
                 </tr>
@@ -50,7 +58,7 @@
                 @if (!Model.Any())
                 {
                     <tr id="noDataRow">
-                        <td colspan="6" class="text-center text-muted py-4">
+                        <td colspan="8" class="text-center text-muted py-4">
                             No clients — click <strong>Add</strong> to get started.
                         </td>
                     </tr>
@@ -60,22 +68,35 @@
                     int i = 1;
                     foreach (var c in Model)
                     {
-                        <tr id="row-@c.Id" data-id="@c.Id" data-ip="@c.IpAddress">
+                        <tr id="row-@c.Id" data-id="@c.Id" data-ip="@c.IpAddress" data-napbox="@c.NapboxName">
                             <td class="row-num d-none d-sm-table-cell">@(i++)</td>
                             <td class="client-name">
-                                @c.Name
+                                <span class="name-text">@c.Name</span>
                                 @* On small screens show IP inline below name *@
-                                <div class="d-md-none text-muted small client-ip-mobile"><code>@c.IpAddress</code></div>
+                                <div class="d-md-none text-muted small client-ip-mobile">@c.IpAddress</div>
                                 <div class="d-lg-none text-muted small client-time-mobile">—</div>
                             </td>
                             <td class="d-none d-md-table-cell"><code class="client-ip">@c.IpAddress</code></td>
                             <td class="client-status">
                                 <span class="badge bg-secondary px-2 py-1">Unknown</span>
                             </td>
+                            <td class="client-napbox text-muted small">@(string.IsNullOrEmpty(c.NapboxName) ? "—" : c.NapboxName)</td>
+                            <td class="text-center client-notify">
+                                @if (c.IsNotificationEnabled)
+                                {
+                                    <span class="bell-on"  title="Notifications ON: @c.NotifyEmail">🔔</span>
+                                }
+                                else
+                                {
+                                    <span class="bell-off" title="Notifications OFF">🔕</span>
+                                }
+                            </td>
                             <td class="d-none d-lg-table-cell text-muted small client-time">—</td>
                             <td class="text-center client-actions">
                                 <button class="btn btn-xs btn-outline-primary me-1 btn-edit"
-                                        data-id="@c.Id" data-name="@c.Name" data-ip="@c.IpAddress">✏</button>
+                                        data-id="@c.Id" data-name="@c.Name" data-ip="@c.IpAddress"
+                                        data-email="@c.NotifyEmail" data-notify="@(c.IsNotificationEnabled ? "1" : "0")"
+                                        data-napbox="@c.NapboxName">✏</button>
                                 <button class="btn btn-xs btn-outline-danger btn-delete"
                                         data-id="@c.Id" data-name="@c.Name">✕</button>
                             </td>
@@ -135,6 +156,34 @@
                            placeholder="e.g. 8.8.8.8 or host.example.com" maxlength="100"
                            autocomplete="off" inputmode="url" />
                     <div class="invalid-feedback" id="ipError"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Napbox</label>
+                    <select id="inputNapbox" class="form-select">
+                        <option value="">— None —</option>
+                    </select>
+                    <div class="form-text">
+                        Manage the list on the <a asp-controller="Napbox" asp-action="Index">Napbox</a> page.
+                    </div>
+                </div>
+
+                <hr />
+                <h6 class="text-muted mb-3">🔔 Notifications</h6>
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch" id="inputNotifyEnabled" />
+                    <label class="form-check-label fw-semibold" for="inputNotifyEnabled">
+                        Enable notifications for this client
+                    </label>
+                </div>
+
+                <div class="mb-1">
+                    <label class="form-label fw-semibold">Notify Email(s)</label>
+                    <input type="text" id="inputNotifyEmail" class="form-control"
+                           placeholder="email1@example.com, email2@example.com" maxlength="1000"
+                           autocomplete="off" />
+                    <div class="form-text">Separate multiple addresses with commas.</div>
+                    <div class="invalid-feedback" id="emailError"></div>
                 </div>
             </div>
             <div class="modal-footer">

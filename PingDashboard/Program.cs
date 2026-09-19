@@ -23,6 +23,9 @@ var dbPath = Path.Combine(AppContext.BaseDirectory, "pingdashboard.db");
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseSqlite($"Data Source={dbPath}"));
 
+// Background service: 5s after startup, ping all clients and log initial status
+builder.Services.AddHostedService<PingDashboard.Services.StartupPingCheck>();
+
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
 var app = builder.Build();
