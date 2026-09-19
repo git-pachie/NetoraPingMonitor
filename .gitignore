@@ -1,0 +1,25 @@
+## .NET build outputs
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+## EF / SQLite database files — do not commit live DB
+*.db
+*.db-wal
+*.db-shm
+
+## Rider / JetBrains
+.idea/
+
+## macOS
+.DS_Store
+
+## NuGet
+*.nupkg
+packages/
+project.lock.json
+
+## Publish output
+publish/
