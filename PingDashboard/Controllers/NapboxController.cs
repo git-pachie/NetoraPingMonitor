@@ -74,31 +74,37 @@ public class NapboxesController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        var box = await _db.Napboxes.FindAsync(id);
-        if (box is null) return NotFound();
+        var oldName = await _db.Napboxes
+            .Where(n => n.Id == id)
+            .Select(n => n.NapboxName)
+            .FirstOrDefaultAsync();
+        if (oldName is null) return NotFound();
 
         var name = dto.NapboxName.Trim();
         var duplicate = await _db.Napboxes.AnyAsync(n => n.NapboxName == name && n.Id != id);
         if (duplicate)
             return Conflict(new { message = $"Napbox '{name}' already exists." });
 
-        var oldName = box.NapboxName;
-        box.NapboxName = name;
-        await _db.SaveChangesAsync();
-        _fileLog.Log("NAPBOX", $"Updated: '{oldName}' → '{box.NapboxName}' (id {box.Id})");
-        return Ok(box);
+        await _db.Napboxes
+            .Where(n => n.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.NapboxName, name));
+
+        _fileLog.Log("NAPBOX", $"Updated: '{oldName}' → '{name}' (id {id})");
+        return Ok(new { id, napboxName = name });
     }
 
     // DELETE api/napboxes/5
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var box = await _db.Napboxes.FindAsync(id);
-        if (box is null) return NotFound();
+        var name = await _db.Napboxes
+            .Where(n => n.Id == id)
+            .Select(n => n.NapboxName)
+            .FirstOrDefaultAsync();
+        if (name is null) return NotFound();
 
-        _db.Napboxes.Remove(box);
-        await _db.SaveChangesAsync();
-        _fileLog.Log("NAPBOX", $"Deleted: '{box.NapboxName}' (id {id})");
+        await _db.Napboxes.Where(n => n.Id == id).ExecuteDeleteAsync();
+        _fileLog.Log("NAPBOX", $"Deleted: '{name}' (id {id})");
         return Ok(new { message = "Deleted." });
     }
 }

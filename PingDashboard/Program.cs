@@ -16,12 +16,16 @@ builder.Services.AddSignalR()
         options.PayloadSerializerOptions.PropertyNamingPolicy =
             System.Text.Json.JsonNamingPolicy.CamelCase);
 
-// SQLite via EF Core.
-// Use AppContext.BaseDirectory so the .db file always lands next to the DLL,
-// regardless of whether the app is launched with `dotnet run` or as an exe.
+// SQLite via EF Core, using a context POOL so instances are reused instead of
+// being allocated/collected per request — lower GC pressure and allocations.
+// Default no-tracking: read queries won't build the change-tracker graph
+// (writes use explicit ExecuteUpdate/Add, so tracking isn't needed for reads).
 var dbPath = Path.Combine(AppContext.BaseDirectory, "pingdashboard.db");
-builder.Services.AddDbContext<AppDbContext>(o =>
-    o.UseSqlite($"Data Source={dbPath}"));
+builder.Services.AddDbContextPool<AppDbContext>(o =>
+{
+    o.UseSqlite($"Data Source={dbPath}");
+    o.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+}, poolSize: 32);
 
 // File logger + email sender (singletons — stateless, config-bound)
 builder.Services.AddSingleton<PingDashboard.Services.IFileLogger, PingDashboard.Services.FileLogger>();

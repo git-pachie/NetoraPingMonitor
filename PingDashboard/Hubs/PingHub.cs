@@ -38,21 +38,22 @@ public class PingHub : Hub
         var timestamp = DateTime.UtcNow;
         var timeStr   = timestamp.ToString("yyyy-MM-dd HH:mm:ss") + " UTC";
 
+        // Look up the client without EF change-tracking — we only need to read
+        // its current values; the actual write is done via a targeted UPDATE.
         var client = await _db.Clients
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.IpAddress == ipAddress);
 
         if (client is not null)
         {
-            // Capture the previous status BEFORE overwriting it
             bool? previous = client.IsConnected;
-
-            // Log only on a genuine transition:
-            //   - previous is null  → first-ever report for this client
-            //   - previous != new   → status changed
             bool statusChanged = previous != isConnected;
 
             if (statusChanged)
             {
+                var stateText = isConnected ? "CONNECTED" : "DISCONNECTED";
+
+                // Log the transition to the DB, app logger, and file log
                 _db.StatusLogs.Add(new StatusLog
                 {
                     ClientName  = client.Name,
@@ -61,16 +62,25 @@ public class PingHub : Hub
                     Timestamp   = timestamp
                 });
 
-                var stateText = isConnected ? "CONNECTED" : "DISCONNECTED";
                 if (isConnected)
                     _logger.LogInformation("CONNECTED: {Name} ({Ip})", client.Name, client.IpAddress);
                 else
                     _logger.LogWarning("DISCONNECTED: {Name} ({Ip})", client.Name, client.IpAddress);
 
-                // File log for the status change
                 _fileLog.Log("STATUS", $"{stateText}: {client.Name} ({client.IpAddress})");
 
-                // Send notification email if enabled and recipients configured
+                // Persist the status log row
+                await _db.SaveChangesAsync();
+
+                // Persist the client's new status + timestamp via a single
+                // targeted UPDATE (no entity tracking / full-row materialisation).
+                await _db.Clients
+                    .Where(c => c.Id == client.Id)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(c => c.IsConnected, isConnected)
+                        .SetProperty(c => c.LastReceivedTime, timestamp));
+
+                // Fire-and-forget notification email
                 if (client.IsNotificationEnabled && !string.IsNullOrWhiteSpace(client.NotifyEmail))
                 {
                     var subject = $"[Ping Monitor] {client.Name} is {stateText}";
@@ -80,17 +90,15 @@ public class PingHub : Hub
                         $"Napbox : {client.NapboxName ?? "-"}\n" +
                         $"Status : {stateText}\n" +
                         $"Time   : {timeStr}\n";
-
-                    // Fire-and-forget send; EmailSender logs the outcome itself
                     _ = _email.SendAsync(client.NotifyEmail, subject, body);
                 }
             }
+            // NOTE: when the status is UNCHANGED we deliberately skip the DB
+            // write. LastReceivedTime in the DB is only used for the first page
+            // render; browsers already track "live" time client-side. This
+            // avoids a disk write on every single ping (the main resource cost).
 
-            // Persist latest status + timestamp (and the log entry if any)
-            client.IsConnected      = isConnected;
-            client.LastReceivedTime = timestamp;
-            await _db.SaveChangesAsync();
-
+            // Always broadcast the live status to browsers
             await Clients.All.SendAsync("ReceiveStatus", new
             {
                 client.Id,
@@ -103,7 +111,6 @@ public class PingHub : Hub
                 client.NapboxName
             });
 
-            // Notify browsers of a new log entry so the Logs page can update live
             if (statusChanged)
             {
                 await Clients.All.SendAsync("ReceiveLog", new
@@ -117,7 +124,7 @@ public class PingHub : Hub
         }
         else
         {
-            // IP not in the database → unknown client (not logged)
+            // IP not in the database → unknown client (not logged, not persisted)
             await Clients.All.SendAsync("ReceiveUnknown", new
             {
                 Name             = string.IsNullOrWhiteSpace(name) ? ipAddress : name,

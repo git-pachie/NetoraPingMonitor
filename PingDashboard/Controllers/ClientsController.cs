@@ -65,33 +65,47 @@ public class ClientsController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        var client = await _db.Clients.FindAsync(id);
-        if (client is null) return NotFound();
+        // No-tracking read just to confirm existence
+        var exists = await _db.Clients.AnyAsync(c => c.Id == id);
+        if (!exists) return NotFound();
 
         var duplicate = await _db.Clients
             .AnyAsync(c => c.IpAddress == dto.IpAddress.Trim() && c.Id != id);
         if (duplicate)
             return Conflict(new { message = $"IP address '{dto.IpAddress}' already exists." });
 
-        client.Name                  = dto.Name.Trim();
-        client.IpAddress             = dto.IpAddress.Trim();
-        client.NotifyEmail           = string.IsNullOrWhiteSpace(dto.NotifyEmail) ? null : dto.NotifyEmail.Trim();
-        client.IsNotificationEnabled = dto.IsNotificationEnabled;
-        client.NapboxName            = string.IsNullOrWhiteSpace(dto.NapboxName) ? null : dto.NapboxName.Trim();
-        await _db.SaveChangesAsync();
-        _fileLog.Log("CLIENT", $"Updated: '{client.Name}' ({client.IpAddress}) napbox='{client.NapboxName ?? "-"}' notify={client.IsNotificationEnabled}");
-        return Ok(client);
+        var name       = dto.Name.Trim();
+        var ip         = dto.IpAddress.Trim();
+        var email      = string.IsNullOrWhiteSpace(dto.NotifyEmail) ? null : dto.NotifyEmail.Trim();
+        var notify     = dto.IsNotificationEnabled;
+        var napbox     = string.IsNullOrWhiteSpace(dto.NapboxName) ? null : dto.NapboxName.Trim();
+
+        // Targeted UPDATE — no entity tracking needed
+        await _db.Clients
+            .Where(c => c.Id == id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Name, name)
+                .SetProperty(c => c.IpAddress, ip)
+                .SetProperty(c => c.NotifyEmail, email)
+                .SetProperty(c => c.IsNotificationEnabled, notify)
+                .SetProperty(c => c.NapboxName, napbox));
+
+        _fileLog.Log("CLIENT", $"Updated: '{name}' ({ip}) napbox='{napbox ?? "-"}' notify={notify}");
+        return Ok(new { id, name, ipAddress = ip, notifyEmail = email, isNotificationEnabled = notify, napboxName = napbox });
     }
 
     // DELETE api/clients/5
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var client = await _db.Clients.FindAsync(id);
+        // Read the name/ip for logging (no-tracking) then delete via ExecuteDelete
+        var client = await _db.Clients
+            .Where(c => c.Id == id)
+            .Select(c => new { c.Name, c.IpAddress })
+            .FirstOrDefaultAsync();
         if (client is null) return NotFound();
 
-        _db.Clients.Remove(client);
-        await _db.SaveChangesAsync();
+        await _db.Clients.Where(c => c.Id == id).ExecuteDeleteAsync();
         _fileLog.Log("CLIENT", $"Deleted: '{client.Name}' ({client.IpAddress}) (id {id})");
         return Ok(new { message = "Deleted." });
     }

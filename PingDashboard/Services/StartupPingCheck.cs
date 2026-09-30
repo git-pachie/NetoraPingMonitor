@@ -40,46 +40,55 @@ public class StartupPingCheck : BackgroundService
         var db      = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var fileLog = scope.ServiceProvider.GetRequiredService<IFileLogger>();
 
-        List<Models.Client> clients;
+        int count;
         try
         {
-            clients = await db.Clients.ToListAsync(stoppingToken);
+            // Single bulk UPDATE resets every client to Unknown — far cheaper
+            // than loading + tracking + saving each entity individually.
+            count = await db.Clients.ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.IsConnected, (bool?)null)
+                .SetProperty(c => c.LastReceivedTime, (DateTime?)null),
+                stoppingToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "StartupReset: failed to load clients.");
+            _logger.LogError(ex, "StartupReset: failed to reset client statuses.");
             return;
         }
 
-        // Reset every client to Unknown
-        foreach (var client in clients)
-        {
-            client.IsConnected      = null;
-            client.LastReceivedTime = null;
-
-            await _hub.Clients.All.SendAsync("ReceiveStatus", new
-            {
-                client.Id,
-                client.Name,
-                client.IpAddress,
-                IsConnected      = (bool?)null,
-                LastReceivedTime = (string?)null,
-                client.NotifyEmail,
-                client.IsNotificationEnabled,
-                client.NapboxName
-            }, stoppingToken);
-        }
-
+        // Broadcast the reset to any connected browsers (lightweight projection,
+        // no full entity materialisation).
         try
         {
-            await db.SaveChangesAsync(stoppingToken);
+            var rows = await db.Clients
+                .Select(c => new
+                {
+                    c.Id, c.Name, c.IpAddress,
+                    c.NotifyEmail, c.IsNotificationEnabled, c.NapboxName
+                })
+                .ToListAsync(stoppingToken);
+
+            foreach (var c in rows)
+            {
+                await _hub.Clients.All.SendAsync("ReceiveStatus", new
+                {
+                    c.Id,
+                    c.Name,
+                    c.IpAddress,
+                    IsConnected      = (bool?)null,
+                    LastReceivedTime = (string?)null,
+                    c.NotifyEmail,
+                    c.IsNotificationEnabled,
+                    c.NapboxName
+                }, stoppingToken);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "StartupReset: failed to persist reset statuses.");
+            _logger.LogError(ex, "StartupReset: failed to broadcast reset statuses.");
         }
 
-        fileLog.Log("APP", $"Startup reset: {clients.Count} client(s) set to Unknown. Awaiting PingAgent reports.");
-        _logger.LogInformation("StartupReset: {Count} client(s) reset to Unknown.", clients.Count);
+        fileLog.Log("APP", $"Startup reset: {count} client(s) set to Unknown. Awaiting PingAgent reports.");
+        _logger.LogInformation("StartupReset: {Count} client(s) reset to Unknown.", count);
     }
 }

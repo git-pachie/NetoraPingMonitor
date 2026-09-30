@@ -6,6 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PingDashboard</RootNamespace>
     <UserSecretsId>pingdashboard-smtp-secrets</UserSecretsId>
+
+    <!-- ── Resource / memory tuning ──────────────────────────────────────────
+         Workstation GC keeps the memory footprint far smaller than the default
+         Server GC (which pre-allocates a heap per CPU core). Ideal for a
+         low-throughput monitoring app. Concurrent GC avoids UI pauses. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <!-- Trim the thread pool / tiered PGO overhead for a small service -->
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>false</TieredPGO>
+    <!-- Don't ship the invariant-globalization ICU unless needed -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
