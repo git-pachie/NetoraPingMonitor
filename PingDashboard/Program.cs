@@ -23,6 +23,10 @@ var dbPath = Path.Combine(AppContext.BaseDirectory, "pingdashboard.db");
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseSqlite($"Data Source={dbPath}"));
 
+// File logger + email sender (singletons — stateless, config-bound)
+builder.Services.AddSingleton<PingDashboard.Services.IFileLogger, PingDashboard.Services.FileLogger>();
+builder.Services.AddSingleton<PingDashboard.Services.IEmailSender, PingDashboard.Services.EmailSender>();
+
 // Background service: 5s after startup, ping all clients and log initial status
 builder.Services.AddHostedService<PingDashboard.Services.StartupPingCheck>();
 
@@ -49,5 +53,12 @@ app.MapHub<PingHub>("/pinghub");
 
 // ── Migrate DB on startup ─────────────────────────────────────────────────────
 DbInitialiser.Initialise(app.Services);
+
+// Record application start in the file log
+using (var scope = app.Services.CreateScope())
+{
+    var fileLog = scope.ServiceProvider.GetRequiredService<PingDashboard.Services.IFileLogger>();
+    fileLog.Log("APP", "PingDashboard started.");
+}
 
 app.Run();

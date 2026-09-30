@@ -1,62 +1,62 @@
 # Netora Ping Monitor
 
-A real-time network monitoring solution built with .NET 8. It continuously pings a configurable list of hosts and displays their connectivity status live in a web dashboard, updated instantly over SignalR — no page refresh needed.
+A real-time network monitoring solution built with .NET 8. It continuously pings a configurable list of hosts and displays their connectivity status live in a web dashboard, updated instantly over SignalR — no page refresh needed. It also stores clients in SQLite, groups them by NAP box, logs connect/disconnect events, and can email alerts when a client's status changes.
 
-The repository contains three independent .NET projects that work together (or standalone).
+The repository contains three .NET projects.
 
 ---
 
 ## Projects
 
-### 1. PingDashboard (ASP.NET Core MVC + SignalR + SQLite)
+### 1. PingDashboard — ASP.NET Core MVC + SignalR + SQLite
 
-The web front end. Displays every monitored client in a live table and lets you manage them.
+The web front end and the heart of the system.
 
-- **Live status** pushed over SignalR — status flips green (Connected) / red (Not Connected) the moment a ping result arrives.
-- **SQLite database** stores the client list (Name, IP Address, Status, Last Received Time). The schema is created automatically on first run.
-- **Full CRUD** — add, edit, and delete clients through a Bootstrap modal with inline validation.
-- **Toast notifications** confirm saves, deletes, and errors.
-- **Unknown Clients section** — any IP reported by the agent that is *not* in the database is grouped separately, with a one-click "Add to DB" button to promote it.
-- **Sortable columns** — click Name or Status to sort ascending/descending.
-- **Responsive layout** — mobile-friendly; secondary columns collapse into the name cell on small screens.
-- **Locale-aware timestamps** — "Last Received Time" is rendered in the viewer's local timezone and regional format.
+- **Live status dashboard** — every client shown in a sortable, responsive table; status flips green (Connected) / red (Not Connected) the instant a ping result arrives over SignalR.
+- **SQLite persistence** — clients, NAP boxes, and status logs are stored in `pingdashboard.db` (created automatically on first run).
+- **Client CRUD** — add / edit / delete clients through a Bootstrap modal with validation and toast notifications.
+- **NAP boxes** — a separate management page to create/edit/delete NAP box names; each client can be assigned to one via a dropdown.
+- **Napbox column** on the dashboard is sortable and has a filter dropdown to show only clients in a selected NAP box.
+- **Unknown clients** — any IP reported by the agent that isn't registered in the DB is grouped in its own section with a one-click "Add to DB" button.
+- **Notifications** — each client can enable email alerts and store a comma-separated recipient list; a bell icon 🔔/🔕 shows the state per row.
+- **Status logging** — connect/disconnect transitions are recorded to a `StatusLogs` table and shown on a live **Logs** page. Logged **only on a status change** so a continuously-reporting agent doesn't flood the log.
+- **Email alerts** — on a status change, if the client has notifications enabled, an email is sent via a configurable SMTP server.
+- **File logging** — client/napbox CRUD, status changes, and email outcomes are appended to a configurable log file.
+- **Startup + periodic sweep** — 5 seconds after startup (and every 5 minutes after) the dashboard pings all clients itself and logs a full snapshot, so it works even before the agent connects.
+- **Responsive + locale-aware** — mobile-friendly layout; timestamps render in the viewer's local timezone.
 
-### 2. PingAgent (Console app)
+### 2. PingAgent — Console app
 
-The monitoring worker. Reads a list of hosts from `appsettings.json`, pings them on an interval, and pushes each result to the PingDashboard SignalR hub.
+Reads a host list from `appsettings.json`, pings them on an interval, and pushes each result to the PingDashboard SignalR hub. Pings run in parallel, and it auto-connects/reconnects so it can start before or after the dashboard.
 
-- Pings all configured hosts in parallel each cycle.
-- Automatically connects (and reconnects) to the hub with backoff — it can be started before or after the dashboard.
-- Supports IP addresses and hostnames.
+### 3. PingMonitor — Console app
 
-### 3. PingMonitor (Console app)
-
-A lightweight standalone logger. Continuously pings a single host (default `8.8.8.8`) and writes a log entry whenever the round-trip time exceeds a configurable threshold. Self-contained — does not require the dashboard.
+A lightweight standalone logger. Pings a single host and writes a log entry whenever round-trip time exceeds a configurable threshold. Independent of the dashboard.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────┐   ping    ┌───────────────┐   SignalR    ┌────────────────────┐
-│   PingAgent  │ ────────► │  Target hosts │              │    PingDashboard   │
-│  (console)   │           └───────────────┘              │  (MVC + SignalR)   │
-│              │ ───────────  ReportStatus  ────────────► │        Hub         │
-└──────────────┘                                          │         │          │
-                                                          │         ▼          │
-                                                          │   SQLite (clients) │
-                                                          │         │          │
-                                                          │         ▼          │
-                                                          │  Browser dashboard │
-                                                          │  (live updates)    │
-                                                          └────────────────────┘
+┌──────────────┐   ping    ┌───────────────┐              ┌────────────────────────┐
+│   PingAgent  │ ────────► │  Target hosts │              │      PingDashboard     │
+│  (console)   │           └───────────────┘              │   (MVC + SignalR Hub)  │
+│              │ ──── ReportStatus (SignalR) ───────────► │           │            │
+└──────────────┘                                          │           ▼            │
+                                                          │   SQLite (clients,     │
+     Dashboard also pings clients itself on a timer  ───► │   napboxes, logs)      │
+                                                          │           │            │
+                                                          │   ┌───────┼────────┐   │
+                                                          │   ▼       ▼        ▼   │
+                                                          │ Browser  File     SMTP │
+                                                          │ (live)   log     email │
+                                                          └────────────────────────┘
 ```
 
-1. **PingAgent** pings each host and calls the hub method `ReportStatus(name, ip, isConnected)`.
-2. The **PingHub** looks up the IP in SQLite:
-   - Known IP → persists status and broadcasts `ReceiveStatus` to browsers.
-   - Unknown IP → broadcasts `ReceiveUnknown` (shown in the Unknown Clients section).
-3. The **browser** receives the event and updates the corresponding table row in real time.
+On each status report the hub checks the IP against the DB:
+- **Known + status changed** → persist, log to file + DB, email if enabled, broadcast `ReceiveStatus` and `ReceiveLog`.
+- **Known + unchanged** → just update the timestamp and broadcast the live status (no log, no email).
+- **Unknown IP** → broadcast `ReceiveUnknown` (shown in the Unknown Clients section).
 
 ---
 
@@ -66,25 +66,18 @@ A lightweight standalone logger. Continuously pings a single host (default `8.8.
 - [.NET 8 SDK](https://dotnet.microsoft.com/download)
 
 ### Run the dashboard
-
 ```bash
 dotnet run --project PingDashboard/PingDashboard.csproj --launch-profile http
 ```
-
-Then open http://localhost:5010. The SQLite database (`pingdashboard.db`) is created automatically on first launch.
+Open http://localhost:5010. The SQLite database is created automatically on first launch.
 
 ### Run the ping agent
-
-In a second terminal:
-
 ```bash
 dotnet run --project PingAgent/PingAgent.csproj
 ```
-
-Make sure `DashboardHubUrl` in `PingAgent/appsettings.json` matches the dashboard's URL.
+Ensure `DashboardHubUrl` in `PingAgent/appsettings.json` matches the dashboard URL.
 
 ### Run the standalone monitor (optional)
-
 ```bash
 dotnet run --project PingMonitor/PingMonitor.csproj
 ```
@@ -93,57 +86,69 @@ dotnet run --project PingMonitor/PingMonitor.csproj
 
 ## Configuration
 
-### PingAgent — `PingAgent/appsettings.json`
+### Email / SMTP (PingDashboard)
 
+Non-secret settings live in `PingDashboard/appsettings.json`:
 ```json
-{
-  "PingAgent": {
-    "DashboardHubUrl": "http://localhost:5010/pinghub",
-    "IntervalMs": 3000,
-    "PingTimeoutMs": 5000,
-    "Clients": [
-      { "Name": "Google DNS Primary", "IpAddress": "8.8.8.8" },
-      { "Name": "Cloudflare DNS",     "IpAddress": "1.1.1.1" }
-    ]
-  }
+"Smtp": {
+  "Enabled": true,
+  "Host": "smtp.gmail.com",
+  "Port": 587,
+  "UseSsl": true,
+  "FromAddress": "your-monitor@example.com",
+  "FromName": "Ping Dashboard"
 }
 ```
 
-| Setting | Description |
-|---|---|
-| `DashboardHubUrl` | URL of the PingDashboard SignalR hub |
-| `IntervalMs` | Delay between ping sweeps (ms) |
-| `PingTimeoutMs` | Per-ping timeout (ms) |
-| `Clients` | List of hosts to monitor (Name + IP/hostname) |
+Credentials are kept out of source control using **.NET user secrets**:
+```bash
+cd PingDashboard
+dotnet user-secrets set "Smtp:Username" "you@gmail.com"
+dotnet user-secrets set "Smtp:Password" "your-app-password"
+```
+> For Gmail, use an **App Password** (with 2FA enabled), not your account password.
+> Set `Smtp:Enabled` to `false` to disable sending (status changes are still logged).
+
+### File logging (PingDashboard)
+
+```json
+"FileLog": {
+  "Path": "logs/pingdashboard.log"
+}
+```
+Relative paths resolve next to the executable. Logged categories: `APP`, `CLIENT`, `NAPBOX`, `STATUS`, `EMAIL`.
+
+### PingAgent — `PingAgent/appsettings.json`
+```json
+"PingAgent": {
+  "DashboardHubUrl": "http://localhost:5010/pinghub",
+  "IntervalMs": 3000,
+  "PingTimeoutMs": 5000,
+  "Clients": [
+    { "Name": "Google DNS Primary", "IpAddress": "8.8.8.8" }
+  ]
+}
+```
 
 ### PingMonitor — `PingMonitor/appsettings.json`
-
 ```json
-{
-  "PingMonitor": {
-    "Host": "8.8.8.8",
-    "ThresholdMs": 20,
-    "IntervalMs": 1000,
-    "LogFilePath": "ping_log.txt"
-  }
+"PingMonitor": {
+  "Host": "8.8.8.8",
+  "ThresholdMs": 20,
+  "IntervalMs": 1000,
+  "LogFilePath": "ping_log.txt"
 }
 ```
-
-| Setting | Description |
-|---|---|
-| `Host` | Host to ping |
-| `ThresholdMs` | Log an entry when RTT exceeds this value |
-| `IntervalMs` | Delay between pings (ms) |
-| `LogFilePath` | Log file path (relative to the executable, or absolute) |
 
 ---
 
 ## Tech Stack
 
-- **.NET 8** — all three projects
+- **.NET 8** — all projects
 - **ASP.NET Core MVC** — dashboard web app
 - **SignalR** — real-time server↔browser and agent↔server messaging
-- **Entity Framework Core + SQLite** — client persistence
+- **Entity Framework Core + SQLite** — persistence
+- **System.Net.Mail** — SMTP email
 - **Bootstrap 5** — responsive UI
 
 ---
@@ -152,14 +157,21 @@ dotnet run --project PingMonitor/PingMonitor.csproj
 
 ```
 NetoraPingMonitor/
-├── PingDashboard/          ASP.NET MVC + SignalR + SQLite dashboard
-│   ├── Controllers/        HomeController, ClientsController (CRUD API)
-│   ├── Data/               AppDbContext, DbInitialiser
-│   ├── Hubs/               PingHub (SignalR)
-│   ├── Models/             Client, ClientStatus
-│   ├── Services/           ClientStatusStore
-│   ├── Views/              Index.cshtml, _Layout.cshtml
-│   └── wwwroot/            dashboard.js, dashboard.css, signalr.min.js
-├── PingAgent/              Console pinger → pushes status to the hub
-└── PingMonitor/            Standalone threshold ping logger
+├── PingDashboard/                 ASP.NET MVC + SignalR + SQLite dashboard
+│   ├── Controllers/               Home, Clients, Napbox, Logs (+ JSON APIs)
+│   ├── Data/                      AppDbContext, DbInitialiser
+│   ├── Hubs/                      PingHub (SignalR)
+│   ├── Models/                    Client, Napbox, StatusLog, ClientStatus
+│   ├── Services/                  FileLogger, EmailSender, StartupPingCheck
+│   ├── Views/                     Home, Napbox, Logs
+│   └── wwwroot/                   dashboard.js, napbox.js, logs.js, css, signalr.min.js
+├── PingAgent/                     Console pinger → pushes status to the hub
+└── PingMonitor/                   Standalone threshold ping logger
 ```
+
+---
+
+## Notes
+
+- SMTP sending has not been verified against a live mail server in this environment; configure real credentials and watch the `[EMAIL]` lines in the log file to confirm delivery.
+- The SQLite database and log files are excluded from git via `.gitignore`.

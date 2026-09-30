@@ -23,3 +23,10 @@ project.lock.json
 
 ## Publish output
 publish/
+
+## Runtime log files
+logs/
+*.log
+
+## User secrets (stored outside repo, but ignore any local copy just in case)
+secrets.json

@@ -18,11 +18,19 @@ public class PingHub : Hub
 {
     private readonly AppDbContext _db;
     private readonly ILogger<PingHub> _logger;
+    private readonly Services.IFileLogger _fileLog;
+    private readonly Services.IEmailSender _email;
 
-    public PingHub(AppDbContext db, ILogger<PingHub> logger)
+    public PingHub(
+        AppDbContext db,
+        ILogger<PingHub> logger,
+        Services.IFileLogger fileLog,
+        Services.IEmailSender email)
     {
         _db = db;
         _logger = logger;
+        _fileLog = fileLog;
+        _email = email;
     }
 
     public async Task ReportStatus(string name, string ipAddress, bool isConnected)
@@ -53,10 +61,29 @@ public class PingHub : Hub
                     Timestamp   = timestamp
                 });
 
+                var stateText = isConnected ? "CONNECTED" : "DISCONNECTED";
                 if (isConnected)
                     _logger.LogInformation("CONNECTED: {Name} ({Ip})", client.Name, client.IpAddress);
                 else
                     _logger.LogWarning("DISCONNECTED: {Name} ({Ip})", client.Name, client.IpAddress);
+
+                // File log for the status change
+                _fileLog.Log("STATUS", $"{stateText}: {client.Name} ({client.IpAddress})");
+
+                // Send notification email if enabled and recipients configured
+                if (client.IsNotificationEnabled && !string.IsNullOrWhiteSpace(client.NotifyEmail))
+                {
+                    var subject = $"[Ping Monitor] {client.Name} is {stateText}";
+                    var body =
+                        $"Client : {client.Name}\n" +
+                        $"IP     : {client.IpAddress}\n" +
+                        $"Napbox : {client.NapboxName ?? "-"}\n" +
+                        $"Status : {stateText}\n" +
+                        $"Time   : {timeStr}\n";
+
+                    // Fire-and-forget send; EmailSender logs the outcome itself
+                    _ = _email.SendAsync(client.NotifyEmail, subject, body);
+                }
             }
 
             // Persist latest status + timestamp (and the log entry if any)

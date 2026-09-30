@@ -66,7 +66,9 @@ public class StartupPingCheck : BackgroundService
         _logger.LogInformation("PingSweep: starting status sweep (logAll={LogAll}).", logAll);
 
         using var scope = _services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var db      = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var fileLog = scope.ServiceProvider.GetRequiredService<IFileLogger>();
+        var email   = scope.ServiceProvider.GetRequiredService<IEmailSender>();
 
         List<Client> clients;
         try
@@ -95,6 +97,7 @@ public class StartupPingCheck : BackgroundService
 
             bool statusChanged = client.IsConnected != isConnected;
             bool shouldLog     = logAll || statusChanged;
+            var  stateText     = isConnected ? "CONNECTED" : "DISCONNECTED";
 
             if (shouldLog)
             {
@@ -110,6 +113,22 @@ public class StartupPingCheck : BackgroundService
                     _logger.LogInformation("CONNECTED: {Name} ({Ip})", client.Name, client.IpAddress);
                 else
                     _logger.LogWarning("DISCONNECTED: {Name} ({Ip})", client.Name, client.IpAddress);
+
+                fileLog.Log("STATUS", $"{stateText}: {client.Name} ({client.IpAddress})");
+            }
+
+            // Send email only on an actual status CHANGE (not on every logAll snapshot),
+            // so periodic snapshots don't spam recipients.
+            if (statusChanged && client.IsNotificationEnabled && !string.IsNullOrWhiteSpace(client.NotifyEmail))
+            {
+                var subject = $"[Ping Monitor] {client.Name} is {stateText}";
+                var body =
+                    $"Client : {client.Name}\n" +
+                    $"IP     : {client.IpAddress}\n" +
+                    $"Napbox : {client.NapboxName ?? "-"}\n" +
+                    $"Status : {stateText}\n" +
+                    $"Time   : {timeStr}\n";
+                _ = email.SendAsync(client.NotifyEmail, subject, body);
             }
 
             client.IsConnected      = isConnected;

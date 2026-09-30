@@ -10,8 +10,13 @@ namespace PingDashboard.Controllers;
 public class ClientsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly Services.IFileLogger _fileLog;
 
-    public ClientsController(AppDbContext db) => _db = db;
+    public ClientsController(AppDbContext db, Services.IFileLogger fileLog)
+    {
+        _db = db;
+        _fileLog = fileLog;
+    }
 
     // GET api/clients
     [HttpGet]
@@ -50,6 +55,7 @@ public class ClientsController : ControllerBase
         };
         _db.Clients.Add(client);
         await _db.SaveChangesAsync();
+        _fileLog.Log("CLIENT", $"Added: '{client.Name}' ({client.IpAddress}) napbox='{client.NapboxName ?? "-"}' notify={client.IsNotificationEnabled}");
         return Ok(client);
     }
 
@@ -73,6 +79,7 @@ public class ClientsController : ControllerBase
         client.IsNotificationEnabled = dto.IsNotificationEnabled;
         client.NapboxName            = string.IsNullOrWhiteSpace(dto.NapboxName) ? null : dto.NapboxName.Trim();
         await _db.SaveChangesAsync();
+        _fileLog.Log("CLIENT", $"Updated: '{client.Name}' ({client.IpAddress}) napbox='{client.NapboxName ?? "-"}' notify={client.IsNotificationEnabled}");
         return Ok(client);
     }
 
@@ -85,6 +92,7 @@ public class ClientsController : ControllerBase
 
         _db.Clients.Remove(client);
         await _db.SaveChangesAsync();
+        _fileLog.Log("CLIENT", $"Deleted: '{client.Name}' ({client.IpAddress}) (id {id})");
         return Ok(new { message = "Deleted." });
     }
 }

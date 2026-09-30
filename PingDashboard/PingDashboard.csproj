@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PingDashboard</RootNamespace>
+    <UserSecretsId>pingdashboard-smtp-secrets</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

@@ -26,8 +26,13 @@ public class NapboxController : Controller
 public class NapboxesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly Services.IFileLogger _fileLog;
 
-    public NapboxesController(AppDbContext db) => _db = db;
+    public NapboxesController(AppDbContext db, Services.IFileLogger fileLog)
+    {
+        _db = db;
+        _fileLog = fileLog;
+    }
 
     // GET api/napboxes
     [HttpGet]
@@ -59,6 +64,7 @@ public class NapboxesController : ControllerBase
         var box = new Napbox { NapboxName = name };
         _db.Napboxes.Add(box);
         await _db.SaveChangesAsync();
+        _fileLog.Log("NAPBOX", $"Added: '{box.NapboxName}' (id {box.Id})");
         return Ok(box);
     }
 
@@ -76,8 +82,10 @@ public class NapboxesController : ControllerBase
         if (duplicate)
             return Conflict(new { message = $"Napbox '{name}' already exists." });
 
+        var oldName = box.NapboxName;
         box.NapboxName = name;
         await _db.SaveChangesAsync();
+        _fileLog.Log("NAPBOX", $"Updated: '{oldName}' → '{box.NapboxName}' (id {box.Id})");
         return Ok(box);
     }
 
@@ -90,6 +98,7 @@ public class NapboxesController : ControllerBase
 
         _db.Napboxes.Remove(box);
         await _db.SaveChangesAsync();
+        _fileLog.Log("NAPBOX", $"Deleted: '{box.NapboxName}' (id {id})");
         return Ok(new { message = "Deleted." });
     }
 }
