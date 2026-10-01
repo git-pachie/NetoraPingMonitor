@@ -10,6 +10,8 @@ public class AppDbContext : DbContext
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Napbox> Napboxes => Set<Napbox>();
     public DbSet<StatusLog> StatusLogs => Set<StatusLog>();
+    public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<UserNapbox> UserNapboxes => Set<UserNapbox>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,6 +35,25 @@ public class AppDbContext : DbContext
             e.Property(s => s.ClientName).IsRequired().HasMaxLength(200);
             e.Property(s => s.IpAddress).IsRequired().HasMaxLength(100);
             e.HasIndex(s => s.Timestamp);
+        });
+
+        modelBuilder.Entity<AppUser>(e =>
+        {
+            e.HasKey(u => u.Id);
+            e.HasIndex(u => u.Username).IsUnique();
+            e.Property(u => u.Username).IsRequired().HasMaxLength(100);
+            e.Property(u => u.Role).IsRequired().HasMaxLength(20);
+            e.HasMany(u => u.Napboxes)
+             .WithOne(n => n.User!)
+             .HasForeignKey(n => n.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserNapbox>(e =>
+        {
+            e.HasKey(n => n.Id);
+            e.Property(n => n.NapboxName).IsRequired().HasMaxLength(200);
+            e.HasIndex(n => n.UserId);
         });
     }
 }

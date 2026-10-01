@@ -35,6 +35,15 @@ public static class DbInitialiser
             // Create tables introduced after the DB was first created
             EnsureNapboxTable(db);
             EnsureStatusLogTable(db);
+            EnsureUsersTable(db);
+
+            // New user profile columns (added after Users table existed)
+            EnsureColumn(db, "Users", "Email", "TEXT");
+            EnsureColumn(db, "Users", "Mobile", "TEXT");
+            EnsureColumn(db, "Users", "ProfileImagePath", "TEXT");
+
+            EnsureUserNapboxTable(db);
+            SeedDefaultAdmin(db, log);
 
             log.LogInformation("Database ready.");
         }
@@ -62,19 +71,21 @@ public static class DbInitialiser
 
     /// <summary>Adds a column to the Clients table if it doesn't already exist.</summary>
     private static void EnsureColumn(AppDbContext db, string columnName, string columnType)
+        => EnsureColumn(db, "Clients", columnName, columnType);
+
+    /// <summary>Adds a column to the given table if it doesn't already exist.</summary>
+    private static void EnsureColumn(AppDbContext db, string tableName, string columnName, string columnType)
     {
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open) conn.Open();
 
-        // Check existing columns via PRAGMA
         bool exists = false;
         using (var check = conn.CreateCommand())
         {
-            check.CommandText = "PRAGMA table_info(Clients);";
+            check.CommandText = $"PRAGMA table_info({tableName});";
             using var reader = check.ExecuteReader();
             while (reader.Read())
             {
-                // column 1 of PRAGMA table_info is the column name
                 if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
                 {
                     exists = true;
@@ -86,7 +97,7 @@ public static class DbInitialiser
         if (!exists)
         {
             using var alter = conn.CreateCommand();
-            alter.CommandText = $"ALTER TABLE Clients ADD COLUMN {columnName} {columnType};";
+            alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType};";
             alter.ExecuteNonQuery();
         }
     }
@@ -123,5 +134,82 @@ public static class DbInitialiser
             );
             CREATE INDEX IF NOT EXISTS IX_StatusLogs_Timestamp ON StatusLogs (Timestamp);";
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Creates the Users table if it doesn't already exist.</summary>
+    private static void EnsureUsersTable(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            @"CREATE TABLE IF NOT EXISTS Users (
+                Id           INTEGER NOT NULL CONSTRAINT PK_Users PRIMARY KEY AUTOINCREMENT,
+                Username     TEXT    NOT NULL,
+                PasswordHash TEXT    NOT NULL,
+                PasswordSalt TEXT    NOT NULL,
+                Role         TEXT    NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Username ON Users (Username);";
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Creates the UserNapboxes join table if it doesn't already exist.</summary>
+    private static void EnsureUserNapboxTable(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            @"CREATE TABLE IF NOT EXISTS UserNapboxes (
+                Id         INTEGER NOT NULL CONSTRAINT PK_UserNapboxes PRIMARY KEY AUTOINCREMENT,
+                UserId     INTEGER NOT NULL,
+                NapboxName TEXT    NOT NULL,
+                CONSTRAINT FK_UserNapboxes_Users FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS IX_UserNapboxes_UserId ON UserNapboxes (UserId);";
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Seeds a default Admin account on a fresh database so someone can log in.
+    /// Default credentials: admin / admin123  (change immediately after first login).
+    /// </summary>
+    private static void SeedDefaultAdmin(AppDbContext db, ILogger log)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open) conn.Open();
+
+        long userCount;
+        using (var count = conn.CreateCommand())
+        {
+            count.CommandText = "SELECT COUNT(*) FROM Users;";
+            userCount = Convert.ToInt64(count.ExecuteScalar());
+        }
+
+        if (userCount > 0) return;
+
+        var (hash, salt) = Services.PasswordHasher.Hash("admin123");
+        using var insert = conn.CreateCommand();
+        insert.CommandText =
+            "INSERT INTO Users (Username, PasswordHash, PasswordSalt, Role) " +
+            "VALUES ($u, $h, $s, $r);";
+        AddParam(insert, "$u", "admin");
+        AddParam(insert, "$h", hash);
+        AddParam(insert, "$s", salt);
+        AddParam(insert, "$r", Models.Roles.Admin);
+        insert.ExecuteNonQuery();
+
+        log.LogWarning("Seeded default admin account (admin / admin123). Change the password after first login.");
+    }
+
+    private static void AddParam(System.Data.Common.DbCommand cmd, string name, string value)
+    {
+        var p = cmd.CreateParameter();
+        p.ParameterName = name;
+        p.Value = value;
+        cmd.Parameters.Add(p);
     }
 }

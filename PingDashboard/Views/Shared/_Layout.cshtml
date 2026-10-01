@@ -21,17 +21,51 @@
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse" id="mainNav">
-                    <ul class="navbar-nav ms-auto">
-                        <li class="nav-item">
-                            <a class="nav-link" asp-controller="Home" asp-action="Index">Dashboard</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" asp-controller="Napbox" asp-action="Index">Napbox</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" asp-controller="Logs" asp-action="Index">Logs</a>
-                        </li>
+                    <ul class="navbar-nav me-auto">
+                        @if (User.Identity?.IsAuthenticated == true)
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Home" asp-action="Index">Dashboard</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Logs" asp-action="Index">Logs</a>
+                            </li>
+                            @if (User.IsInRole("Admin"))
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link" asp-controller="Napbox" asp-action="Index">Napbox</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" asp-controller="Users" asp-action="Index">Users</a>
+                                </li>
+                            }
+                        }
                     </ul>
+
+                    @if (User.Identity?.IsAuthenticated == true)
+                    {
+                        <ul class="navbar-nav align-items-md-center">
+                            <li class="nav-item me-md-2">
+                                <span class="navbar-text">
+                                    <span class="text-light">@User.Identity!.Name</span>
+                                    @if (User.IsInRole("Admin"))
+                                    {
+                                        <span class="badge bg-primary ms-1">Admin</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary ms-1">Technician</span>
+                                    }
+                                </span>
+                            </li>
+                            <li class="nav-item">
+                                <form method="post" asp-controller="Account" asp-action="Logout" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-outline-light">Logout</button>
+                                </form>
+                            </li>
+                        </ul>
+                    }
                 </div>
             </div>
         </nav>

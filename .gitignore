@@ -30,3 +30,11 @@ logs/
 
 ## User secrets (stored outside repo, but ignore any local copy just in case)
 secrets.json
+
+## Uploaded profile images — keep the folder (.gitkeep) but not the uploads
+PingDashboard/wwwroot/uploads/profiles/*
+!PingDashboard/wwwroot/uploads/profiles/.gitkeep
+
+## Scratch / temp build logs
+bl.txt
+buildlog.txt

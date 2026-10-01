@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PingDashboard.Data;
@@ -7,6 +8,7 @@ namespace PingDashboard.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // any logged-in user can read; writes require AdminOnly (per method)
 public class ClientsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -18,11 +20,18 @@ public class ClientsController : ControllerBase
         _fileLog = fileLog;
     }
 
-    // GET api/clients
+    // GET api/clients — scoped to the caller's napboxes (Admin sees all)
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var clients = await _db.Clients.OrderBy(c => c.Name).ToListAsync();
+        var allowed = await Services.NapboxScope.GetAllowedNapboxesAsync(_db, User);
+        var query = _db.Clients.AsQueryable();
+        if (allowed is not null)
+        {
+            var list = allowed.ToList();
+            query = query.Where(c => c.NapboxName != null && list.Contains(c.NapboxName));
+        }
+        var clients = await query.OrderBy(c => c.Name).ToListAsync();
         return Ok(clients);
     }
 
@@ -36,6 +45,7 @@ public class ClientsController : ControllerBase
 
     // POST api/clients
     [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Create([FromBody] ClientDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -61,6 +71,7 @@ public class ClientsController : ControllerBase
 
     // PUT api/clients/5
     [HttpPut("{id:int}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Update(int id, [FromBody] ClientDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -96,6 +107,7 @@ public class ClientsController : ControllerBase
 
     // DELETE api/clients/5
     [HttpDelete("{id:int}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Delete(int id)
     {
         // Read the name/ip for logging (no-tracking) then delete via ExecuteDelete

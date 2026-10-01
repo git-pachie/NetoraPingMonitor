@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PingDashboard.Data;
@@ -5,7 +6,8 @@ using PingDashboard.Models;
 
 namespace PingDashboard.Controllers;
 
-/// <summary>MVC controller that renders the Napbox management page.</summary>
+/// <summary>MVC controller that renders the Napbox management page (Admin only).</summary>
+[Authorize(Policy = "AdminOnly")]
 public class NapboxController : Controller
 {
     private readonly AppDbContext _db;
@@ -23,6 +25,7 @@ public class NapboxController : Controller
 /// <summary>JSON API for Napbox CRUD.</summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // reads allowed for any logged-in user; writes require AdminOnly
 public class NapboxesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -34,11 +37,18 @@ public class NapboxesController : ControllerBase
         _fileLog = fileLog;
     }
 
-    // GET api/napboxes
+    // GET api/napboxes — scoped: Technicians only see their assigned napboxes
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var boxes = await _db.Napboxes.OrderBy(n => n.NapboxName).ToListAsync();
+        var allowed = await Services.NapboxScope.GetAllowedNapboxesAsync(_db, User);
+        var query = _db.Napboxes.AsQueryable();
+        if (allowed is not null)
+        {
+            var list = allowed.ToList();
+            query = query.Where(n => list.Contains(n.NapboxName));
+        }
+        var boxes = await query.OrderBy(n => n.NapboxName).ToListAsync();
         return Ok(boxes);
     }
 
@@ -52,6 +62,7 @@ public class NapboxesController : ControllerBase
 
     // POST api/napboxes
     [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Create([FromBody] NapboxDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -70,6 +81,7 @@ public class NapboxesController : ControllerBase
 
     // PUT api/napboxes/5
     [HttpPut("{id:int}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Update(int id, [FromBody] NapboxDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -95,6 +107,7 @@ public class NapboxesController : ControllerBase
 
     // DELETE api/napboxes/5
     [HttpDelete("{id:int}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Delete(int id)
     {
         var name = await _db.Napboxes

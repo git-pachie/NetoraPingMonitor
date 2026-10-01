@@ -15,6 +15,22 @@
     // ── Filter state ───────────────────────────────────────────────────────────
     var napboxFilter = "";   // "" = show all
 
+    // ── Napbox visibility scope (Technician) ────────────────────────────────────
+    // window.allowedNapboxes is null for Admin (see everything) or an array of
+    // napbox names the Technician is assigned to.
+    var allowedSet = null;
+    if (Array.isArray(window.allowedNapboxes)) {
+        allowedSet = {};
+        window.allowedNapboxes.forEach(function (n) {
+            if (n) allowedSet[String(n).toLowerCase()] = true;
+        });
+    }
+    function napboxAllowed(name) {
+        if (allowedSet === null) return true;            // Admin
+        if (!name) return false;                          // techs never see unassigned clients
+        return !!allowedSet[String(name).toLowerCase()];
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // NORMALISE RAZOR-RENDERED ROWS
     // Razor emits plain text directly inside <td class="client-name">.
@@ -111,6 +127,8 @@
     }
 
     function actionButtons(id, name, ip, email, notify, napbox) {
+        // Technicians have no edit/delete controls
+        if (!window.isAdmin) return "";
         var n = escHtml(name), p = escHtml(ip), e = escHtml(email || ""),
             nt = notify ? "1" : "0", nb = escHtml(napbox || "");
         return '<button class="btn btn-xs btn-outline-primary me-1 btn-edit"' +
@@ -610,8 +628,10 @@
         if (btn) openAddModal(btn.dataset.name, btn.dataset.ip);
     });
 
-    document.getElementById("btnAddClient").addEventListener("click", function() { openAddModal(); });
-    document.getElementById("btnSave").addEventListener("click", saveClient);
+    var addBtn = document.getElementById("btnAddClient");
+    if (addBtn) addBtn.addEventListener("click", function() { openAddModal(); });
+    var saveBtn = document.getElementById("btnSave");
+    if (saveBtn) saveBtn.addEventListener("click", saveClient);
 
     ["name","status","napbox"].forEach(function(col) {
         var th = document.getElementById("th-" + col);
@@ -636,8 +656,16 @@
         .configureLogging(signalR.LogLevel.Warning)
         .build();
 
-    connection.on("ReceiveStatus",  function(data) { upsertKnownRow(data);   });
-    connection.on("ReceiveUnknown", function(data) { upsertUnknownRow(data); });
+    connection.on("ReceiveStatus",  function(data) {
+        // Technicians only see clients in their assigned napboxes
+        if (!napboxAllowed(data.napboxName)) return;
+        upsertKnownRow(data);
+    });
+    connection.on("ReceiveUnknown", function(data) {
+        // Unknown (unassigned) clients are hidden from Technicians entirely
+        if (allowedSet !== null) return;
+        upsertUnknownRow(data);
+    });
 
     connection.onreconnecting(function() { setConnectionState("reconnecting"); });
     connection.onreconnected(function()  { setConnectionState("connected");    });

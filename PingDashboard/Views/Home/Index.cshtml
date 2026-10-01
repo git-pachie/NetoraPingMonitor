@@ -34,9 +34,20 @@
         <span class="text-muted small d-none d-md-inline">
             Refreshed: <strong id="lastRefresh">—</strong>
         </span>
-        <button class="btn btn-sm btn-primary" id="btnAddClient">&#43; Add</button>
+        @if (User.IsInRole("Admin"))
+        {
+            <button class="btn btn-sm btn-primary" id="btnAddClient">&#43; Add</button>
+        }
     </div>
 </div>
+
+<script>
+    window.isAdmin = @(User.IsInRole("Admin") ? "true" : "false");
+    // null for Admin (no restriction); otherwise the array of allowed napbox names.
+    window.allowedNapboxes = @(ViewBag.AllowedNapboxes is string[] arr
+        ? "[" + string.Join(",", arr.Select(a => "\"" + a.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"")) + "]"
+        : "null");
+</script>
 
 @* ── Known clients ────────────────────────────────────────────────────────────── *@
 <div class="card shadow-sm mb-4">
@@ -93,12 +104,15 @@
                             </td>
                             <td class="d-none d-lg-table-cell text-muted small client-time">—</td>
                             <td class="text-center client-actions">
-                                <button class="btn btn-xs btn-outline-primary me-1 btn-edit"
-                                        data-id="@c.Id" data-name="@c.Name" data-ip="@c.IpAddress"
-                                        data-email="@c.NotifyEmail" data-notify="@(c.IsNotificationEnabled ? "1" : "0")"
-                                        data-napbox="@c.NapboxName">✏</button>
-                                <button class="btn btn-xs btn-outline-danger btn-delete"
-                                        data-id="@c.Id" data-name="@c.Name">✕</button>
+                                @if (User.IsInRole("Admin"))
+                                {
+                                    <button class="btn btn-xs btn-outline-primary me-1 btn-edit"
+                                            data-id="@c.Id" data-name="@c.Name" data-ip="@c.IpAddress"
+                                            data-email="@c.NotifyEmail" data-notify="@(c.IsNotificationEnabled ? "1" : "0")"
+                                            data-napbox="@c.NapboxName">✏</button>
+                                    <button class="btn btn-xs btn-outline-danger btn-delete"
+                                            data-id="@c.Id" data-name="@c.Name">✕</button>
+                                }
                             </td>
                         </tr>
                     }

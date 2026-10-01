@@ -31,6 +31,26 @@ builder.Services.AddDbContextPool<AppDbContext>(o =>
 builder.Services.AddSingleton<PingDashboard.Services.IFileLogger, PingDashboard.Services.FileLogger>();
 builder.Services.AddSingleton<PingDashboard.Services.IEmailSender, PingDashboard.Services.EmailSender>();
 
+// ── Authentication & Authorization ─────────────────────────────────────────────
+builder.Services
+    .AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath        = "/Account/Login";
+        options.LogoutPath       = "/Account/Logout";
+        options.AccessDeniedPath = "/Account/Denied";
+        options.ExpireTimeSpan   = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.Cookie.Name      = "PingDashboard.Auth";
+        options.Cookie.HttpOnly  = true;
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    // Admin-only policy for all create/edit/delete operations
+    options.AddPolicy("AdminOnly", p => p.RequireRole(PingDashboard.Models.Roles.Admin));
+});
+
 // Background service: 5s after startup, ping all clients and log initial status
 builder.Services.AddHostedService<PingDashboard.Services.StartupPingCheck>();
 
@@ -47,6 +67,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseRouting();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllerRoute(

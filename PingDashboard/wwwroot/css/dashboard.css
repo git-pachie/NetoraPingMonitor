@@ -96,3 +96,20 @@ code { color: #0d6efd; font-size: .85rem; }
 
 /* Notification switch spacing in modal */
 .form-switch .form-check-input { cursor: pointer; }
+
+/* ── User avatars ────────────────────────────────────────────────────────────── */
+.avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9ecef;
+    color: #495057;
+    font-weight: 600;
+    font-size: 0.9rem;
+    vertical-align: middle;
+}
+.avatar-lg { width: 64px; height: 64px; font-size: 1.4rem; }
+.avatar-placeholder { background: #0d6efd; color: #fff; }
