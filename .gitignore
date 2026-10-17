@@ -38,3 +38,6 @@ PingDashboard/wwwroot/uploads/profiles/*
 ## Scratch / temp build logs
 bl.txt
 buildlog.txt
+
+## Build / deployment archive artifacts
+*.zip
